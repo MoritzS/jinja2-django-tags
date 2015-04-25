@@ -2,7 +2,7 @@
 from __future__ import absolute_import, unicode_literals
 import unittest
 from jinja2 import Environment, TemplateError
-from jdj_tags.extensions import DjangoI18n, DjangoStatic, DjangoUrl
+from jdj_tags.extensions import DjangoCsrf, DjangoI18n, DjangoStatic, DjangoUrl
 
 
 class TestCase(unittest.TestCase):
@@ -15,6 +15,25 @@ class TestCase(unittest.TestCase):
         second = second.replace("u'", "'").replace('u"', '"')
 
         self.assertEqual(first, second, msg)
+
+
+class DjangoCsrfTest(TestCase):
+    def setUp(self):
+        self.env = Environment(extensions=[DjangoCsrf])
+        self.template = self.env.from_string("{% csrf_token %}")
+
+    def test_token(self):
+        context = {'csrf_token': 'a_csrf_token'}
+        expected = '<input type="hidden" name="csrfmiddlewaretoken" value="a_csrf_token" />'
+
+        self.assertEqual(expected, self.template.render(context))
+
+    def test_empty_token(self):
+        context1 = {}
+        context2 = {'csrf_token': 'NOTPROVIDED'}
+
+        self.assertEqual('', self.template.render(context1))
+        self.assertEqual('', self.template.render(context2))
 
 
 class DjangoI18nTransTest(TestCase):
