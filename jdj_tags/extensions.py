@@ -75,7 +75,7 @@ class DjangoI18n(Extension):
 
     You also can use `_`, `gettext` and `pgettext` directly::
 
-        Simple example: {{ _('Hello World') }}
+        Simple example: {{ _('Hello World') }}
         More verbose: {{ gettext('Hello World') }}
         With context: {{ pgettext('Hello World', 'another example') }}
 
