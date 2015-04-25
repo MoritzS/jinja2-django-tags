@@ -2,6 +2,7 @@
 jinja2 extensions that add django tags.
 """
 from __future__ import unicode_literals
+
 from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.templatetags.static import static as django_static
@@ -91,6 +92,7 @@ class DjangoI18n(Extension):
                 environment.finalize = localize
             else:
                 old_finalize = environment.finalize
+
                 def wrapper(var):
                     return localize(old_finalize(var))
                 environment.finalize = wrapper
@@ -356,4 +358,3 @@ class DjangoCompat(DjangoCsrf, DjangoI18n, DjangoStatic, DjangoUrl):
         if cls is None:
             parser.fail("got unexpected tag '{}'".format(name))  # pragma: no cover
         return cls.parse(self, parser)
-

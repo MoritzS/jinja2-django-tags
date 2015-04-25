@@ -1,8 +1,10 @@
 # coding: utf-8
 from __future__ import absolute_import, unicode_literals
+
 from django.test import SimpleTestCase, override_settings
 from jinja2 import Environment, TemplateSyntaxError
 from jinja2.ext import Extension
+
 from jdj_tags.extensions import DjangoCompat, DjangoCsrf, DjangoI18n, DjangoStatic, DjangoUrl
 
 try:
