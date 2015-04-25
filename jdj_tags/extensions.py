@@ -205,7 +205,7 @@ class DjangoI18n(Extension):
 
     def _make_blocktrans(self, trans_str, context=None, trans_vars=None):
         if trans_vars is None:
-            trans_vars = {}
+            trans_vars = {}  # pragma: no cover
         if context is None:
             return ugettext(force_text(trans_str)) % trans_vars
         else:
@@ -354,6 +354,6 @@ class DjangoCompat(DjangoCsrf, DjangoI18n, DjangoStatic, DjangoUrl):
         name = parser.stream.current.value
         cls = self._tag_class.get(name)
         if cls is None:
-            parser.fail("got unexpected tag '{}'".format(name))
+            parser.fail("got unexpected tag '{}'".format(name))  # pragma: no cover
         return cls.parse(self, parser)
 

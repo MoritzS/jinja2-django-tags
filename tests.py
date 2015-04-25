@@ -1,23 +1,17 @@
 # coding: utf-8
 from __future__ import absolute_import, unicode_literals
-import unittest
-from jinja2 import Environment, TemplateError
-from jdj_tags.extensions import DjangoCsrf, DjangoI18n, DjangoStatic, DjangoUrl
+from django.test import SimpleTestCase, override_settings
+from jinja2 import Environment, TemplateSyntaxError
+from jinja2.ext import Extension
+from jdj_tags.extensions import DjangoCompat, DjangoCsrf, DjangoI18n, DjangoStatic, DjangoUrl
+
+try:
+    from unittest import mock
+except ImportError:
+    import mock
 
 
-class TestCase(unittest.TestCase):
-    def assertStrEqual(self, first, second, msg=None):
-        """
-        Compares two strings but removes all 'u' prefixes for unicode
-        strings first.
-        """
-        first = first.replace("u'", "'").replace('u"', '"')
-        second = second.replace("u'", "'").replace('u"', '"')
-
-        self.assertEqual(first, second, msg)
-
-
-class DjangoCsrfTest(TestCase):
+class DjangoCsrfTest(SimpleTestCase):
     def setUp(self):
         self.env = Environment(extensions=[DjangoCsrf])
         self.template = self.env.from_string("{% csrf_token %}")
@@ -36,11 +30,46 @@ class DjangoCsrfTest(TestCase):
         self.assertEqual('', self.template.render(context2))
 
 
-class DjangoI18nTransTest(TestCase):
+@override_settings(USE_L10N=True)
+class DjangoI18nLocalizeTest(SimpleTestCase):
     def setUp(self):
-        self.env = Environment(extensions=[DjangoI18n])
-        self.env.globals['gettext'] = lambda s: '{} - translated'.format(s)
-        self.env.globals['pgettext'] = lambda c, s: '{} - alt translated'.format(s)
+        self.localize = mock.Mock(side_effect=lambda s: '{} - localized'.format(s))
+
+        with mock.patch('jdj_tags.extensions.localize', self.localize):
+            self.env = Environment(extensions=[DjangoI18n])
+
+    def test_localize(self):
+        template = self.env.from_string("{{ foo }}")
+
+        self.assertEqual('foovar - localized', template.render({'foo': 'foovar'}))
+        self.localize.assert_called_with('foovar')
+
+    def test_existing_finalize(self):
+        finalize_mock = mock.Mock(side_effect=lambda s: s)
+
+        class TestExtension(Extension):
+            def __init__(self, environment):
+                environment.finalize = finalize_mock
+
+        with mock.patch('jdj_tags.extensions.localize', self.localize):
+            env = Environment(extensions=[TestExtension, DjangoI18n])
+            template = env.from_string("{{ foo }}")
+
+            self.assertEqual('foovar - localized', template.render({'foo': 'foovar'}))
+
+        finalize_mock.assert_called_with('foovar')
+        self.localize.assert_called_with('foovar')
+
+
+gettext_mock = mock.Mock(side_effect=lambda s: '{} - translated'.format(s))
+pgettext_mock = mock.Mock(side_effect=lambda c, s: '{} - alt translated'.format(s))
+
+
+class DjangoI18nTransTest(SimpleTestCase):
+    def setUp(self):
+        with mock.patch('jdj_tags.extensions.ugettext', gettext_mock), \
+                mock.patch('jdj_tags.extensions.pgettext', pgettext_mock):
+            self.env = Environment(extensions=[DjangoI18n])
 
         self.str = 'Hello World'
         self.trans1 = '{} - translated'.format(self.str)
@@ -51,9 +80,20 @@ class DjangoI18nTransTest(TestCase):
         template2 = self.env.from_string(
             "{% trans 'Hello World' context 'some context' %}"
         )
+        template3 = self.env.from_string("{{ _('Hello World') }}")
+        template4 = self.env.from_string("{{ gettext('Hello World') }}")
+        template5 = self.env.from_string("{{ pgettext('some context', 'Hello World') }}")
 
-        self.assertStrEqual(self.trans1, template1.render())
-        self.assertStrEqual(self.trans2, template2.render())
+        self.assertEqual(self.trans1, template1.render())
+        gettext_mock.assert_called_with('Hello World')
+        self.assertEqual(self.trans2, template2.render())
+        pgettext_mock.assert_called_with('some context', 'Hello World')
+        self.assertEqual(self.trans1, template3.render())
+        gettext_mock.assert_called_with('Hello World')
+        self.assertEqual(self.trans1, template4.render())
+        gettext_mock.assert_called_with('Hello World')
+        self.assertEqual(self.trans2, template5.render())
+        pgettext_mock.assert_called_with('some context', 'Hello World')
 
     def test_noop(self):
         template = self.env.from_string("{% trans 'Hello World' noop %}")
@@ -66,6 +106,7 @@ class DjangoI18nTransTest(TestCase):
         )
 
         self.assertEqual('My var is: {}!'.format(self.trans1), template.render())
+        gettext_mock.assert_called_with('Hello World')
 
     def test_noop_as_var(self):
         template1 = self.env.from_string(
@@ -80,28 +121,27 @@ class DjangoI18nTransTest(TestCase):
         self.assertEqual(expected_str, template1.render())
         self.assertEqual(expected_str, template2.render())
 
-    def test_fail_noop_context(self):
-        template1 = lambda: self.env.from_string(
-            "{% trans 'Hello World' noop context 'some context' %}"
-        )
-        template2 = lambda: self.env.from_string(
-            "{% trans 'Hello World' context 'some context' noop %}"
-        )
+    def test_errors(self):
+        template1 = "{% trans 'Hello World' foo %}"
+        template2 = "{% trans 'Hello World' noop context 'some context' %}"
+        template3 = "{% trans 'Hello World' context 'some context' noop %}"
 
-        self.assertRaises(TemplateError, template1)
-        self.assertRaises(TemplateError, template2)
+        error_messages = [
+            (template1, "expected 'noop', 'context' or 'as'"),
+            (template2, "noop translation can't have context"),
+            (template3, "noop translation can't have context"),
+        ]
+
+        for template, msg in error_messages:
+            with self.assertRaisesMessage(TemplateSyntaxError, msg):
+                self.env.from_string(template)
 
 
-class DjangoI18nBlocktransTest(TestCase):
-    def mock_blocktrans(self, trans_str, context=None, trans_vars=None):
-        if trans_vars is None:
-            trans_vars = {}
-        return "translated '{}', context: {}, trans_vars: {}" \
-               "".format(trans_str, context, trans_vars)
-
+@mock.patch('jdj_tags.extensions.ugettext', gettext_mock)
+@mock.patch('jdj_tags.extensions.pgettext', pgettext_mock)
+class DjangoI18nBlocktransTest(SimpleTestCase):
     def setUp(self):
         self.env = Environment(extensions=[DjangoI18n])
-        self.env.extensions[DjangoI18n.identifier]._make_blocktrans = self.mock_blocktrans
 
     def test_simple(self):
         template1 = self.env.from_string('{% blocktrans %}Translate me!{% endblocktrans %}')
@@ -109,8 +149,10 @@ class DjangoI18nBlocktransTest(TestCase):
             "{% blocktrans context 'foo' %}Translate me!{% endblocktrans %}"
         )
 
-        self.assertStrEqual(self.mock_blocktrans('Translate me!'), template1.render())
-        self.assertStrEqual(self.mock_blocktrans('Translate me!', 'foo'), template2.render())
+        self.assertEqual('Translate me! - translated', template1.render())
+        gettext_mock.assert_called_with('Translate me!')
+        self.assertEqual('Translate me! - alt translated', template2.render())
+        pgettext_mock.assert_called_with('foo', 'Translate me!')
 
     def test_trimmed(self):
         template = self.env.from_string("""{% blocktrans trimmed %}
@@ -118,7 +160,8 @@ class DjangoI18nBlocktransTest(TestCase):
                 me!
             {% endblocktrans %}""")
 
-        self.assertStrEqual(self.mock_blocktrans('Translate me!'), template.render())
+        self.assertEqual('Translate me! - translated', template.render())
+        gettext_mock.assert_called_with('Translate me!')
 
     def test_with(self):
         template1 = self.env.from_string(
@@ -136,88 +179,103 @@ class DjangoI18nBlocktransTest(TestCase):
             "{% blocktrans with foo=bar|upper %}Trans: {{ foo }}{% endblocktrans %}"
         )
 
-        self.assertStrEqual(
-            self.mock_blocktrans('Trans: %(foo)s', None, {'foo': 'barvar'}),
+        self.assertEqual(
+            'Trans: barvar - translated',
             template1.render({'bar': 'barvar'})
         )
-        self.assertStrEqual(
-            self.mock_blocktrans(
-                'Trans: %(foo)s and %(spam)s',
-                None,
-                {'foo': 'barvar', 'spam': 'eggsvar'}
-            ),
+        gettext_mock.assert_called_with('Trans: %(foo)s')
+        self.assertEqual(
+            'Trans: barvar and eggsvar - translated',
             template2.render({'bar': 'barvar', 'eggs': 'eggsvar'})
         )
-        self.assertStrEqual(
-            'foovar {} foovar'.format(
-                self.mock_blocktrans(
-                    'Trans: %(foo)s', None, {'foo': 'barvar'}
-                )
-            ),
+        gettext_mock.assert_called_with('Trans: %(foo)s and %(spam)s')
+        self.assertEqual(
+            'foovar Trans: barvar - translated foovar',
             template3.render({'foo': 'foovar', 'bar': 'barvar'})
         )
-        self.assertStrEqual(
-            self.mock_blocktrans('Trans: %(foo)s', None, {'foo': 'BARVAR'}),
+        gettext_mock.assert_called_with('Trans: %(foo)s')
+        self.assertEqual(
+            'Trans: BARVAR - translated',
             template4.render({'bar': 'barvar'})
         )
+        gettext_mock.assert_called_with('Trans: %(foo)s')
+
+    def test_global_var(self):
+        template = self.env.from_string("{% blocktrans %}Trans: {{ foo }}{% endblocktrans %}")
+
+        self.assertEqual(
+            'Trans: foovar - translated',
+            template.render({'foo': 'foovar'})
+        )
+        gettext_mock.assert_called_with('Trans: %(foo)s')
 
 
-class DjangoStaticTest(TestCase):
-    def mock_static(self, path):
-        return 'Static: {}'.format(path)
+static_mock = mock.Mock(side_effect=lambda s: 'Static: {}'.format(s))
 
+
+@mock.patch('jdj_tags.extensions.django_static', static_mock)
+class DjangoStaticTest(SimpleTestCase):
     def setUp(self):
         self.env = Environment(extensions=[DjangoStatic])
-        self.env.extensions[DjangoStatic.identifier]._static = self.mock_static
 
     def test_simple(self):
         template = self.env.from_string("{% static 'static.png' %}")
 
-        self.assertStrEqual(self.mock_static('static.png'), template.render())
+        self.assertEqual('Static: static.png', template.render())
+        static_mock.assert_called_with('static.png')
 
     def test_as_var(self):
         template = self.env.from_string(
             "{% static 'static.png' as my_url %}My url is: {{ my_url }}!"
         )
 
-        self.assertStrEqual(
-            'My url is: {}!'.format(self.mock_static('static.png')),
-            template.render()
-        )
+        self.assertEqual('My url is: Static: static.png!', template.render())
+        static_mock.assert_called_with('static.png')
 
 
-class DjangoUrlTest(TestCase):
-    def mock_reverse(self, name, *args, **kwargs):
-        return 'reversed {} with args {} and kwargs {}'.format(name, args, kwargs)
+reverse_mock = mock.Mock(side_effect=lambda name, *args, **kwargs: 'Url for: {}'.format(name))
 
+
+@mock.patch('jdj_tags.extensions.reverse', reverse_mock)
+class DjangoUrlTest(SimpleTestCase):
     def setUp(self):
         self.env = Environment(extensions=[DjangoUrl])
-        self.env.extensions[DjangoUrl.identifier]._url_reverse = self.mock_reverse
 
     def test_simple(self):
         template = self.env.from_string("{% url 'my_view' %}")
 
-        self.assertStrEqual(self.mock_reverse('my_view'), template.render())
+        self.assertEqual('Url for: my_view', template.render())
+        reverse_mock.assert_called_with('my_view', args=(), kwargs={})
 
     def test_args(self):
         template1 = self.env.from_string("{% url 'my_view' 'foo' 'bar' %}")
         template2 = self.env.from_string("{% url 'my_view' arg1 'bar' %}")
         template3 = self.env.from_string("{% url 'my_view' arg1 arg2 %}")
 
-        url = self.mock_reverse('my_view', 'foo', 'bar')
-        self.assertStrEqual(url, template1.render())
-        self.assertStrEqual(url, template2.render({'arg1': 'foo'}))
-        self.assertStrEqual(url, template3.render({'arg1': 'foo', 'arg2': 'bar'}))
+        expected = 'Url for: my_view'
+        call = mock.call('my_view', args=('foo', 'bar'), kwargs={})
+
+        self.assertEqual(expected, template1.render())
+        self.assertEqual(call, reverse_mock.call_args)
+        self.assertEqual(expected, template2.render({'arg1': 'foo'}))
+        self.assertEqual(call, reverse_mock.call_args)
+        self.assertEqual(expected, template3.render({'arg1': 'foo', 'arg2': 'bar'}))
+        self.assertEqual(call, reverse_mock.call_args)
 
     def test_kwargs(self):
         template1 = self.env.from_string("{% url 'my_view' kw1='foo' kw2='bar' %}")
         template2 = self.env.from_string("{% url 'my_view' kw1=arg1 kw2='bar' %}")
         template3 = self.env.from_string("{% url 'my_view' kw1=arg1 kw2=arg2 %}")
 
-        url = self.mock_reverse('my_view', kw1='foo', kw2='bar')
-        self.assertStrEqual(url, template1.render())
-        self.assertStrEqual(url, template2.render({'arg1': 'foo'}))
-        self.assertStrEqual(url, template3.render({'arg1': 'foo', 'arg2': 'bar'}))
+        expected = 'Url for: my_view'
+        call = mock.call('my_view', args=(), kwargs={'kw1': 'foo', 'kw2': 'bar'})
+
+        self.assertEqual(expected, template1.render())
+        self.assertEqual(call, reverse_mock.call_args)
+        self.assertEqual(expected, template2.render({'arg1': 'foo'}))
+        self.assertEqual(call, reverse_mock.call_args)
+        self.assertEqual(expected, template3.render({'arg1': 'foo', 'arg2': 'bar'}))
+        self.assertEqual(call, reverse_mock.call_args)
 
     def test_dotted_expr(self):
         template1 = self.env.from_string("{% url 'my_view' foo.bar %}")
@@ -229,14 +287,10 @@ class DjangoUrlTest(TestCase):
         foo = Foo()
         foo.bar = 'argument'
 
-        self.assertStrEqual(
-            self.mock_reverse('my_view', 'argument'),
-            template1.render({'foo': foo})
-        )
-        self.assertStrEqual(
-            self.mock_reverse('my_view', kw1='argument'),
-            template2.render({'foo': foo})
-        )
+        self.assertEqual('Url for: my_view', template1.render({'foo': foo}))
+        reverse_mock.assert_called_with('my_view', args=('argument',), kwargs={})
+        self.assertEqual('Url for: my_view', template2.render({'foo': foo}))
+        reverse_mock.assert_called_with('my_view', args=(), kwargs={'kw1': 'argument'})
 
     def test_as_var(self):
         template1 = self.env.from_string("{% url 'my_view' as my_url %}Url: {{ my_url }}")
@@ -247,23 +301,56 @@ class DjangoUrlTest(TestCase):
             "{% url 'my_view' kw1=arg1 kw2='bar' as my_url %}Url: {{ my_url }}"
         )
 
-        url1 = self.mock_reverse('my_view')
-        url2 = self.mock_reverse('my_view', 'foo', 'bar')
-        url3 = self.mock_reverse('my_view', kw1='foo', kw2='bar')
+        expected = 'Url: Url for: my_view'
 
-        self.assertStrEqual('Url: {}'.format(url1), template1.render())
-        self.assertStrEqual('Url: {}'.format(url2), template2.render({'arg1': 'foo'}))
-        self.assertStrEqual('Url: {}'.format(url3), template3.render({'arg1': 'foo'}))
+        self.assertEqual(expected, template1.render())
+        reverse_mock.assert_called_with('my_view', args=(), kwargs={})
+        self.assertEqual(expected, template2.render({'arg1': 'foo'}))
+        reverse_mock.assert_called_with('my_view', args=('foo', 'bar'), kwargs={})
+        self.assertEqual(expected, template3.render({'arg1': 'foo'}))
+        reverse_mock.assert_called_with('my_view', args=(), kwargs={'kw1': 'foo', 'kw2': 'bar'})
 
-    def test_fail_mixed_args(self):
-        template1 = lambda: self.env.from_string("{% url 'my_view' 'foo' other_arg='bar' %}")
-        template2 = lambda: self.env.from_string("{% url 'my_view' arg1='foo' 'bar' %}")
+    def test_errors(self):
+        template = "{% url 'my_view' kw1='foo' 123 %}"
+        msg = "got 'integer', expected name for keyword argument"
 
-        self.assertRaises(TemplateError, template1)
-        self.assertRaises(TemplateError, template2)
+        with self.assertRaisesMessage(TemplateSyntaxError, msg):
+            self.env.from_string(template)
+
+
+class DjangoCompatTest(SimpleTestCase):
+    class CalledParse(Exception):
+        pass
+
+    @classmethod
+    def make_mock(cls, cls_name):
+        def parse(self, parser):
+            raise cls.CalledParse(cls_name)
+        return mock.Mock(side_effect=parse)
+
+    def setUp(self):
+        self.env = Environment(extensions=[DjangoCompat])
+
+    def test_compat(self):
+        tags = [
+            ('csrf_token', 'DjangoCsrf'),
+            ('trans', 'DjangoI18n'),
+            ('blocktrans', 'DjangoI18n'),
+            ('static', 'DjangoStatic'),
+            ('url', 'DjangoUrl'),
+        ]
+
+        with mock.patch('jdj_tags.extensions.DjangoCsrf.parse', self.make_mock('DjangoCsrf')), \
+                mock.patch('jdj_tags.extensions.DjangoI18n.parse', self.make_mock('DjangoI18n')), \
+                mock.patch('jdj_tags.extensions.DjangoStatic.parse', self.make_mock('DjangoStatic')), \
+                mock.patch('jdj_tags.extensions.DjangoUrl.parse', self.make_mock('DjangoUrl')):
+            for tag, class_name in tags:
+                with self.assertRaisesMessage(self.CalledParse, class_name):
+                    self.env.from_string('{% ' + tag + ' %}')
 
 
 if __name__ == '__main__':
+    import unittest
     from django.conf import settings
     settings.configure()
 
