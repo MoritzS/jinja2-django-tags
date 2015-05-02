@@ -1,5 +1,5 @@
 # coding: utf-8
-from __future__ import absolute_import, unicode_literals
+from __future__ import unicode_literals
 
 from django.test import SimpleTestCase, override_settings
 from jinja2 import Environment, TemplateSyntaxError
@@ -34,11 +34,11 @@ class DjangoCsrfTest(SimpleTestCase):
 
 @override_settings(USE_L10N=True)
 class DjangoI18nLocalizeTest(SimpleTestCase):
-    def setUp(self):
-        self.localize = mock.Mock(side_effect=lambda s: '{} - localized'.format(s))
-
-        with mock.patch('jdj_tags.extensions.localize', self.localize):
-            self.env = Environment(extensions=[DjangoI18n])
+    @mock.patch('jdj_tags.extensions.localize')
+    def setUp(self, localize):
+        localize.side_effect = lambda s: '{} - localized'.format(s)
+        self.localize = localize
+        self.env = Environment(extensions=[DjangoI18n])
 
     def test_localize(self):
         template = self.env.from_string("{{ foo }}")
@@ -63,20 +63,29 @@ class DjangoI18nLocalizeTest(SimpleTestCase):
         self.localize.assert_called_with('foovar')
 
 
-gettext_mock = mock.Mock(side_effect=lambda s: '{} - translated'.format(s))
-pgettext_mock = mock.Mock(side_effect=lambda c, s: '{} - alt translated'.format(s))
+class DjangoI18nTestBase(SimpleTestCase):
+    @staticmethod
+    def _gettext(string):
+        return '{} - translated'.format(string)
 
+    @staticmethod
+    def _pgettext(context, string):
+        return '{} - alt translated'.format(string)
 
-class DjangoI18nTransTest(SimpleTestCase):
     def setUp(self):
-        with mock.patch('jdj_tags.extensions.ugettext', gettext_mock), \
-                mock.patch('jdj_tags.extensions.pgettext', pgettext_mock):
-            self.env = Environment(extensions=[DjangoI18n])
+        gettext_patcher = mock.patch('jdj_tags.extensions.ugettext', side_effect=self._gettext)
+        pgettext_patcher = mock.patch('jdj_tags.extensions.pgettext', side_effect=self._pgettext)
 
-        self.str = 'Hello World'
-        self.trans1 = '{} - translated'.format(self.str)
-        self.trans2 = '{} - alt translated'.format(self.str)
+        self.gettext = gettext_patcher.start()
+        self.pgettext = pgettext_patcher.start()
 
+        self.addCleanup(gettext_patcher.stop)
+        self.addCleanup(pgettext_patcher.stop)
+
+        self.env = Environment(extensions=[DjangoI18n])
+
+
+class DjangoI18nTransTest(DjangoI18nTestBase):
     def test_simple_trans(self):
         template1 = self.env.from_string("{% trans 'Hello World' %}")
         template2 = self.env.from_string(
@@ -86,29 +95,32 @@ class DjangoI18nTransTest(SimpleTestCase):
         template4 = self.env.from_string("{{ gettext('Hello World') }}")
         template5 = self.env.from_string("{{ pgettext('some context', 'Hello World') }}")
 
-        self.assertEqual(self.trans1, template1.render())
-        gettext_mock.assert_called_with('Hello World')
-        self.assertEqual(self.trans2, template2.render())
-        pgettext_mock.assert_called_with('some context', 'Hello World')
-        self.assertEqual(self.trans1, template3.render())
-        gettext_mock.assert_called_with('Hello World')
-        self.assertEqual(self.trans1, template4.render())
-        gettext_mock.assert_called_with('Hello World')
-        self.assertEqual(self.trans2, template5.render())
-        pgettext_mock.assert_called_with('some context', 'Hello World')
+        trans1 = 'Hello World - translated'
+        trans2 = 'Hello World - alt translated'
+
+        self.assertEqual(trans1, template1.render())
+        self.gettext.assert_called_with('Hello World')
+        self.assertEqual(trans2, template2.render())
+        self.pgettext.assert_called_with('some context', 'Hello World')
+        self.assertEqual(trans1, template3.render())
+        self.gettext.assert_called_with('Hello World')
+        self.assertEqual(trans1, template4.render())
+        self.gettext.assert_called_with('Hello World')
+        self.assertEqual(trans2, template5.render())
+        self.pgettext.assert_called_with('some context', 'Hello World')
 
     def test_noop(self):
         template = self.env.from_string("{% trans 'Hello World' noop %}")
 
-        self.assertEqual(self.str, template.render())
+        self.assertEqual('Hello World', template.render())
 
     def test_as_var(self):
         template = self.env.from_string(
             "{% trans 'Hello World' as myvar %}My var is: {{ myvar }}!"
         )
 
-        self.assertEqual('My var is: {}!'.format(self.trans1), template.render())
-        gettext_mock.assert_called_with('Hello World')
+        self.assertEqual('My var is: Hello World - translated!', template.render())
+        self.gettext.assert_called_with('Hello World')
 
     def test_noop_as_var(self):
         template1 = self.env.from_string(
@@ -118,7 +130,7 @@ class DjangoI18nTransTest(SimpleTestCase):
             "{% trans 'Hello World' as myvar noop %}My var is: {{ myvar }}!"
         )
 
-        expected_str = 'My var is: {}!'.format(self.str)
+        expected_str = 'My var is: Hello World!'
 
         self.assertEqual(expected_str, template1.render())
         self.assertEqual(expected_str, template2.render())
@@ -139,12 +151,7 @@ class DjangoI18nTransTest(SimpleTestCase):
                 self.env.from_string(template)
 
 
-@mock.patch('jdj_tags.extensions.ugettext', gettext_mock)
-@mock.patch('jdj_tags.extensions.pgettext', pgettext_mock)
-class DjangoI18nBlocktransTest(SimpleTestCase):
-    def setUp(self):
-        self.env = Environment(extensions=[DjangoI18n])
-
+class DjangoI18nBlocktransTest(DjangoI18nTestBase):
     def test_simple(self):
         template1 = self.env.from_string('{% blocktrans %}Translate me!{% endblocktrans %}')
         template2 = self.env.from_string(
@@ -152,9 +159,9 @@ class DjangoI18nBlocktransTest(SimpleTestCase):
         )
 
         self.assertEqual('Translate me! - translated', template1.render())
-        gettext_mock.assert_called_with('Translate me!')
+        self.gettext.assert_called_with('Translate me!')
         self.assertEqual('Translate me! - alt translated', template2.render())
-        pgettext_mock.assert_called_with('foo', 'Translate me!')
+        self.pgettext.assert_called_with('foo', 'Translate me!')
 
     def test_trimmed(self):
         template = self.env.from_string("""{% blocktrans trimmed %}
@@ -163,7 +170,7 @@ class DjangoI18nBlocktransTest(SimpleTestCase):
             {% endblocktrans %}""")
 
         self.assertEqual('Translate me! - translated', template.render())
-        gettext_mock.assert_called_with('Translate me!')
+        self.gettext.assert_called_with('Translate me!')
 
     def test_with(self):
         template1 = self.env.from_string(
@@ -185,22 +192,22 @@ class DjangoI18nBlocktransTest(SimpleTestCase):
             'Trans: barvar - translated',
             template1.render({'bar': 'barvar'})
         )
-        gettext_mock.assert_called_with('Trans: %(foo)s')
+        self.gettext.assert_called_with('Trans: %(foo)s')
         self.assertEqual(
             'Trans: barvar and eggsvar - translated',
             template2.render({'bar': 'barvar', 'eggs': 'eggsvar'})
         )
-        gettext_mock.assert_called_with('Trans: %(foo)s and %(spam)s')
+        self.gettext.assert_called_with('Trans: %(foo)s and %(spam)s')
         self.assertEqual(
             'foovar Trans: barvar - translated foovar',
             template3.render({'foo': 'foovar', 'bar': 'barvar'})
         )
-        gettext_mock.assert_called_with('Trans: %(foo)s')
+        self.gettext.assert_called_with('Trans: %(foo)s')
         self.assertEqual(
             'Trans: BARVAR - translated',
             template4.render({'bar': 'barvar'})
         )
-        gettext_mock.assert_called_with('Trans: %(foo)s')
+        self.gettext.assert_called_with('Trans: %(foo)s')
 
     def test_global_var(self):
         template = self.env.from_string("{% blocktrans %}Trans: {{ foo }}{% endblocktrans %}")
@@ -209,22 +216,26 @@ class DjangoI18nBlocktransTest(SimpleTestCase):
             'Trans: foovar - translated',
             template.render({'foo': 'foovar'})
         )
-        gettext_mock.assert_called_with('Trans: %(foo)s')
+        self.gettext.assert_called_with('Trans: %(foo)s')
 
 
-static_mock = mock.Mock(side_effect=lambda s: 'Static: {}'.format(s))
-
-
-@mock.patch('jdj_tags.extensions.django_static', static_mock)
 class DjangoStaticTest(SimpleTestCase):
+    @staticmethod
+    def _static(path):
+        return 'Static: {}'.format(path)
+
     def setUp(self):
+        patcher = mock.patch('jdj_tags.extensions.django_static', side_effect=self._static)
+        self.static = patcher.start()
+        self.addCleanup(patcher.stop)
+
         self.env = Environment(extensions=[DjangoStatic])
 
     def test_simple(self):
         template = self.env.from_string("{% static 'static.png' %}")
 
         self.assertEqual('Static: static.png', template.render())
-        static_mock.assert_called_with('static.png')
+        self.static.assert_called_with('static.png')
 
     def test_as_var(self):
         template = self.env.from_string(
@@ -232,22 +243,26 @@ class DjangoStaticTest(SimpleTestCase):
         )
 
         self.assertEqual('My url is: Static: static.png!', template.render())
-        static_mock.assert_called_with('static.png')
+        self.static.assert_called_with('static.png')
 
 
-reverse_mock = mock.Mock(side_effect=lambda name, *args, **kwargs: 'Url for: {}'.format(name))
-
-
-@mock.patch('jdj_tags.extensions.reverse', reverse_mock)
 class DjangoUrlTest(SimpleTestCase):
+    @staticmethod
+    def _reverse(name, *args, **kwargs):
+        return 'Url for: {}'.format(name)
+
     def setUp(self):
+        patcher = mock.patch('jdj_tags.extensions.reverse', side_effect=self._reverse)
+        self.reverse = patcher.start()
+        self.addCleanup(patcher.stop)
+
         self.env = Environment(extensions=[DjangoUrl])
 
     def test_simple(self):
         template = self.env.from_string("{% url 'my_view' %}")
 
         self.assertEqual('Url for: my_view', template.render())
-        reverse_mock.assert_called_with('my_view', args=(), kwargs={})
+        self.reverse.assert_called_with('my_view', args=(), kwargs={})
 
     def test_args(self):
         template1 = self.env.from_string("{% url 'my_view' 'foo' 'bar' %}")
@@ -258,11 +273,11 @@ class DjangoUrlTest(SimpleTestCase):
         call = mock.call('my_view', args=('foo', 'bar'), kwargs={})
 
         self.assertEqual(expected, template1.render())
-        self.assertEqual(call, reverse_mock.call_args)
+        self.assertEqual(call, self.reverse.call_args)
         self.assertEqual(expected, template2.render({'arg1': 'foo'}))
-        self.assertEqual(call, reverse_mock.call_args)
+        self.assertEqual(call, self.reverse.call_args)
         self.assertEqual(expected, template3.render({'arg1': 'foo', 'arg2': 'bar'}))
-        self.assertEqual(call, reverse_mock.call_args)
+        self.assertEqual(call, self.reverse.call_args)
 
     def test_kwargs(self):
         template1 = self.env.from_string("{% url 'my_view' kw1='foo' kw2='bar' %}")
@@ -273,11 +288,11 @@ class DjangoUrlTest(SimpleTestCase):
         call = mock.call('my_view', args=(), kwargs={'kw1': 'foo', 'kw2': 'bar'})
 
         self.assertEqual(expected, template1.render())
-        self.assertEqual(call, reverse_mock.call_args)
+        self.assertEqual(call, self.reverse.call_args)
         self.assertEqual(expected, template2.render({'arg1': 'foo'}))
-        self.assertEqual(call, reverse_mock.call_args)
+        self.assertEqual(call, self.reverse.call_args)
         self.assertEqual(expected, template3.render({'arg1': 'foo', 'arg2': 'bar'}))
-        self.assertEqual(call, reverse_mock.call_args)
+        self.assertEqual(call, self.reverse.call_args)
 
     def test_dotted_expr(self):
         template1 = self.env.from_string("{% url 'my_view' foo.bar %}")
@@ -290,9 +305,9 @@ class DjangoUrlTest(SimpleTestCase):
         foo.bar = 'argument'
 
         self.assertEqual('Url for: my_view', template1.render({'foo': foo}))
-        reverse_mock.assert_called_with('my_view', args=('argument',), kwargs={})
+        self.reverse.assert_called_with('my_view', args=('argument',), kwargs={})
         self.assertEqual('Url for: my_view', template2.render({'foo': foo}))
-        reverse_mock.assert_called_with('my_view', args=(), kwargs={'kw1': 'argument'})
+        self.reverse.assert_called_with('my_view', args=(), kwargs={'kw1': 'argument'})
 
     def test_as_var(self):
         template1 = self.env.from_string("{% url 'my_view' as my_url %}Url: {{ my_url }}")
@@ -306,11 +321,11 @@ class DjangoUrlTest(SimpleTestCase):
         expected = 'Url: Url for: my_view'
 
         self.assertEqual(expected, template1.render())
-        reverse_mock.assert_called_with('my_view', args=(), kwargs={})
+        self.reverse.assert_called_with('my_view', args=(), kwargs={})
         self.assertEqual(expected, template2.render({'arg1': 'foo'}))
-        reverse_mock.assert_called_with('my_view', args=('foo', 'bar'), kwargs={})
+        self.reverse.assert_called_with('my_view', args=('foo', 'bar'), kwargs={})
         self.assertEqual(expected, template3.render({'arg1': 'foo'}))
-        reverse_mock.assert_called_with('my_view', args=(), kwargs={'kw1': 'foo', 'kw2': 'bar'})
+        self.reverse.assert_called_with('my_view', args=(), kwargs={'kw1': 'foo', 'kw2': 'bar'})
 
     def test_errors(self):
         template = "{% url 'my_view' kw1='foo' 123 %}"
@@ -321,16 +336,26 @@ class DjangoUrlTest(SimpleTestCase):
 
 
 class DjangoCompatTest(SimpleTestCase):
+    classes = ['DjangoCsrf', 'DjangoI18n', 'DjangoStatic', 'DjangoUrl']
+
     class CalledParse(Exception):
         pass
 
     @classmethod
-    def make_mock(cls, cls_name):
+    def make_side_effect(cls, cls_name):
         def parse(self, parser):
             raise cls.CalledParse(cls_name)
-        return mock.Mock(side_effect=parse)
+        return parse
 
     def setUp(self):
+        for class_name in self.classes:
+            patcher = mock.patch(
+                'jdj_tags.extensions.{}.parse'.format(class_name),
+                side_effect=self.make_side_effect(class_name)
+            )
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
         self.env = Environment(extensions=[DjangoCompat])
 
     def test_compat(self):
@@ -342,13 +367,9 @@ class DjangoCompatTest(SimpleTestCase):
             ('url', 'DjangoUrl'),
         ]
 
-        with mock.patch('jdj_tags.extensions.DjangoCsrf.parse', self.make_mock('DjangoCsrf')), \
-                mock.patch('jdj_tags.extensions.DjangoI18n.parse', self.make_mock('DjangoI18n')), \
-                mock.patch('jdj_tags.extensions.DjangoStatic.parse', self.make_mock('DjangoStatic')), \
-                mock.patch('jdj_tags.extensions.DjangoUrl.parse', self.make_mock('DjangoUrl')):
-            for tag, class_name in tags:
-                with self.assertRaisesMessage(self.CalledParse, class_name):
-                    self.env.from_string('{% ' + tag + ' %}')
+        for tag, class_name in tags:
+            with self.assertRaisesMessage(self.CalledParse, class_name):
+                self.env.from_string('{% ' + tag + ' %}')
 
 
 if __name__ == '__main__':
