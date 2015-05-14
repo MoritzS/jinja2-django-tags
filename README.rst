@@ -2,12 +2,34 @@
 jinja2-django-tags
 ==================
 
-This little library contains extensions for jinja2 that add template tags to jinja2
-that your are used to from django templates.
+This little library contains extensions for jinja2 that add template tags to
+jinja2 that your are used to from django templates.
+
+The following tags are included:
+
+- `csrf_token`_
+- `trans and blocktrans`_
+- `static`_
+- `url`_
+
+.. _trans and blocktrans: trans-blocktrans_
+
+Requirements
+============
+
+This library requires at least Django 1.8 because there official jinja2 support
+was added.
+
+If you want to use jinja2 templates in older versions of Django, take a look
+at `django-jinja <https://github.com/niwinz/django-jinja>`_.
+
+Also it has only been tested for Python 2.7 and 3.4, and Jinja2 2.7 and 2.8.
 
 Usage
 =====
-To use the tags, just run ``setup.py install`` and add the extensions to your ``TEMPLATES`` settings:
+To use the tags, just run ``setup.py install`` from the base directory or
+``pip install jinja2-django-tags`` and add the extensions to your ``TEMPLATES``
+settings:
 
 .. code-block:: python
 
@@ -25,15 +47,17 @@ To use the tags, just run ``setup.py install`` and add the extensions to your ``
         },
     }
 
-If you want all tags at once use ``jdj_tags.extensions.DjangoCompat`` in the ``extensions`` Option.
+If you want all tags at once use ``jdj_tags.extensions.DjangoCompat`` in
+the ``extensions`` Option.
 
 Tags
 ====
 
-csrf\_token
------------
+csrf_token
+----------
 The ``{% csrf_token %}`` tag comes with ``jdj_tags.extensions.DjangoCsrf``.
 
+.. _trans-blocktrans:
 trans, blocktrans
 -----------------
 The i18n tags are defined in ``jdj_tags.extensions.DjangoI18n``.
@@ -42,7 +66,7 @@ The extension also tries to localize variables (such as dates and numbers) if
 
 ``{% trans %}`` works as it does in django:
 
-.. code-block:: html+django
+.. code-block:: html+django/jinja
 
     Simple example: {% trans 'Hello World' %}
 
@@ -58,7 +82,7 @@ The extension also tries to localize variables (such as dates and numbers) if
 ``{% blocktrans %}`` currently doesn't support the ``count`` argument, but
 everything else works:
 
-.. code-block:: html+django
+.. code-block:: html+django/jinja
 
     Simple example: {% blocktrans %}Hello World!{% endblocktrans %}
 
@@ -77,7 +101,7 @@ everything else works:
 
 You can also use ``_``, ``gettext`` and ``pgettext`` directly:
 
-.. code-block:: html+django
+.. code-block:: html+django/jinja
 
     Simple example: {{ _('Hello World') }}
     More verbose: {{ gettext('Hello World') }}
@@ -85,11 +109,11 @@ You can also use ``_``, ``gettext`` and ``pgettext`` directly:
 
 
 static
------
-The ``{% static %}`` comes with ``jdj_tags.extensions.DjangoStatic``.
+------
+The ``{% static %}`` tag comes with ``jdj_tags.extensions.DjangoStatic``.
 It works the same as in Django:
 
-.. code-block:: html+django
+.. code-block:: html+django/jinja
 
     My static file: {% static 'my/static.file' %}
 
@@ -103,7 +127,7 @@ The ``{% url %}`` tag is defined in ``jdj_tags.extensions.DjangoUrl``.
 It works as it does in django, therefore you can only specify either
 args or kwargs:
 
-.. code-block:: html+django
+.. code-block:: html+django/jinja
     Url with args: {% url 'my_view' arg1 "string arg2" %}
     Url with kwargs: {% url 'my_view' kwarg1=arg1 kwarg2="string arg2" %}
 
