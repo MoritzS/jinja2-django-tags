@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name='jinja2-django-tags',
-    version='0.1',
+    version='0.2',
     author='Moritz Sichert',
     author_email='moritz.sichert@googlemail.com',
     url='https://github.com/MoritzS/jinja2-django-tags',
@@ -12,7 +12,7 @@ setup(
     license='BSD',
     packages=['jdj_tags'],
     install_requires=[
-        'Django>=1.8b2',
+        'Django>=1.8',
         'Jinja2>=2.7',
     ],
     classifiers=[
