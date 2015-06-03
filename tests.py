@@ -1,11 +1,16 @@
 # coding: utf-8
 from __future__ import unicode_literals
 
+import datetime
+
 from django.test import SimpleTestCase, override_settings
+from django.test.utils import requires_tz_support
+from django.utils import timezone, translation
 from jinja2 import Environment, TemplateSyntaxError
 from jinja2.ext import Extension
 
-from jdj_tags.extensions import DjangoCompat, DjangoCsrf, DjangoI18n, DjangoStatic, DjangoUrl
+from jdj_tags.extensions import (DjangoCompat, DjangoCsrf, DjangoI18n, DjangoL10n, DjangoStatic,
+                                 DjangoUrl)
 
 try:
     from unittest import mock
@@ -30,37 +35,6 @@ class DjangoCsrfTest(SimpleTestCase):
 
         self.assertEqual('', self.template.render(context1))
         self.assertEqual('', self.template.render(context2))
-
-
-@override_settings(USE_L10N=True)
-class DjangoI18nLocalizeTest(SimpleTestCase):
-    @mock.patch('jdj_tags.extensions.localize')
-    def setUp(self, localize):
-        localize.side_effect = lambda s: '{} - localized'.format(s)
-        self.localize = localize
-        self.env = Environment(extensions=[DjangoI18n])
-
-    def test_localize(self):
-        template = self.env.from_string("{{ foo }}")
-
-        self.assertEqual('foovar - localized', template.render({'foo': 'foovar'}))
-        self.localize.assert_called_with('foovar')
-
-    def test_existing_finalize(self):
-        finalize_mock = mock.Mock(side_effect=lambda s: s)
-
-        class TestExtension(Extension):
-            def __init__(self, environment):
-                environment.finalize = finalize_mock
-
-        with mock.patch('jdj_tags.extensions.localize', self.localize):
-            env = Environment(extensions=[TestExtension, DjangoI18n])
-            template = env.from_string("{{ foo }}")
-
-            self.assertEqual('foovar - localized', template.render({'foo': 'foovar'}))
-
-        finalize_mock.assert_called_with('foovar')
-        self.localize.assert_called_with('foovar')
 
 
 class DjangoI18nTestBase(SimpleTestCase):
@@ -219,6 +193,50 @@ class DjangoI18nBlocktransTest(DjangoI18nTestBase):
         self.gettext.assert_called_with('Trans: %(foo)s')
 
 
+@override_settings(USE_L10N=True, USE_TZ=True)
+class DjangoL10nTest(SimpleTestCase):
+    @requires_tz_support
+    def test_localize(self):
+        env = Environment(extensions=[DjangoL10n])
+        template = env.from_string("{{ foo }}")
+        context1 = {'foo': 1.23}
+        date = datetime.datetime(2000, 10, 1, 14, 10, 12, tzinfo=timezone.utc)
+        context2 = {'foo': date}
+
+        translation.activate('en')
+        self.assertEqual('1.23', template.render(context1))
+
+        translation.activate('de')
+        self.assertEqual('1,23', template.render(context1))
+
+        translation.activate('es')
+        timezone.activate('America/Argentina/Buenos_Aires')
+        self.assertEqual('1 de Octubre de 2000 a las 11:10', template.render(context2))
+
+        timezone.activate('Europe/Berlin')
+        self.assertEqual('1 de Octubre de 2000 a las 16:10', template.render(context2))
+
+        translation.activate('de')
+        self.assertEqual('1. Oktober 2000 16:10', template.render(context2))
+
+        timezone.activate('America/Argentina/Buenos_Aires')
+        self.assertEqual('1. Oktober 2000 11:10', template.render(context2))
+
+    def test_existing_finalize(self):
+        finalize_mock = mock.Mock(side_effect=lambda s: s)
+
+        class TestExtension(Extension):
+            def __init__(self, environment):
+                environment.finalize = finalize_mock
+
+        env = Environment(extensions=[TestExtension, DjangoL10n])
+        template = env.from_string("{{ foo }}")
+
+        translation.activate('de')
+        self.assertEqual('1,23', template.render({'foo': 1.23}))
+        finalize_mock.assert_called_with(1.23)
+
+
 class DjangoStaticTest(SimpleTestCase):
     @staticmethod
     def _static(path):
@@ -374,7 +392,9 @@ class DjangoCompatTest(SimpleTestCase):
 
 if __name__ == '__main__':
     import unittest
+    from django.apps import apps
     from django.conf import settings
     settings.configure()
+    apps.populate(settings.INSTALLED_APPS)
 
     unittest.main()

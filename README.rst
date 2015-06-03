@@ -12,7 +12,10 @@ The following tags are included:
 - `static`_
 - `url`_
 
+There is also an extension for `localizing template variables`_.
+
 .. _trans and blocktrans: trans-blocktrans_
+.. _localizing template variables: Localization_
 
 Requirements
 ============
@@ -134,3 +137,30 @@ args or kwargs:
     Save to variable:
     {% url 'my_view' 'foo' 'bar' as my_url %}
     {{ my_url }}
+
+
+Localization
+============
+
+The ``jdj_tags.extensions.DjangoL10n`` extension implements localization of template variables
+with respect to ``USE_L10N`` and ``USE_TZ`` settings:
+
+.. code-block:: python
+
+    >>> from datetime import datetime
+    >>> from django.utils import timezone, translation
+    >>> from jinja2 import Extension
+    >>> env = Environment(extensions=[DjangoL10n])
+    >>> template = env.from_string("{{ a_number }} {{ a_date }}")
+    >>> context = {
+    ...     'a_number': 1.23,
+    ...     'a_date': datetime(2000, 10, 1, 14, 10, 12, tzinfo=timezone.utc),
+    ... }
+    >>> translation.activate('en')
+    >>> timezone.activate('America/Argentina/Buenos_Aires')
+    >>> template.render(context)
+    '1.23 Oct. 1, 2000, 11:10 a.m.'
+    >>> translation.activate('de')
+    >>> translation.activate('Europe/Berlin')
+    >>> template.render(context)
+    '1,23 1. Oktober 2000 16:10'
