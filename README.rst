@@ -1,6 +1,9 @@
 ==================
 jinja2-django-tags
 ==================
+.. image:: https://img.shields.io/pypi/v/jinja2-django-tags.svg
+   :alt: jinja2-django-tags on pypi
+   :target: https://pypi.python.org/pypi/jinja2-django-tags
 
 This little library contains extensions for jinja2 that add template tags to
 jinja2 that your are used to from django templates.
