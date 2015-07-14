@@ -198,6 +198,8 @@ class DjangoI18n(Extension):
     def _make_blocktrans(self, trans_str, context=None, trans_vars=None):
         if trans_vars is None:
             trans_vars = {}  # pragma: no cover
+        if self.environment.finalize:
+            trans_vars = {key: self.environment.finalize(val) for key, val in trans_vars.items()}
         if context is None:
             return ugettext(force_text(trans_str)) % trans_vars
         else:

@@ -192,6 +192,18 @@ class DjangoI18nBlocktransTest(DjangoI18nTestBase):
         )
         self.gettext.assert_called_with('Trans: %(foo)s')
 
+    @override_settings(USE_L10N=True)
+    def test_finalize_vars(self):
+        def finalize(s):
+            if s == 123:
+                return 'finalized 123'
+            else:
+                return s
+        self.env.finalize = finalize
+        template = self.env.from_string("{% blocktrans %}{{ foo }}{% endblocktrans %}")
+
+        self.assertEqual('finalized 123 - translated', template.render({'foo': 123}))
+
 
 @override_settings(USE_L10N=True, USE_TZ=True)
 class DjangoL10nTest(SimpleTestCase):
