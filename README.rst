@@ -6,7 +6,7 @@ jinja2-django-tags
    :target: https://pypi.python.org/pypi/jinja2-django-tags
 
 This little library contains extensions for jinja2 that add template tags to
-jinja2 that your are used to from django templates.
+jinja2 that you are used to from django templates.
 
 The following tags are included:
 
