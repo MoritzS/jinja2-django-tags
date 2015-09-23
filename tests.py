@@ -39,12 +39,12 @@ class DjangoCsrfTest(SimpleTestCase):
 
 class DjangoI18nTestBase(SimpleTestCase):
     @staticmethod
-    def _gettext(string):
-        return '{} - translated'.format(string)
+    def _gettext(message):
+        return '{} - translated'.format(message)
 
     @staticmethod
-    def _pgettext(context, string):
-        return '{} - alt translated'.format(string)
+    def _pgettext(context, message):
+        return 'alt translated'
 
     def setUp(self):
         gettext_patcher = mock.patch('jdj_tags.extensions.ugettext', side_effect=self._gettext)
@@ -69,24 +69,22 @@ class DjangoI18nTransTest(DjangoI18nTestBase):
         template4 = self.env.from_string("{{ gettext('Hello World') }}")
         template5 = self.env.from_string("{{ pgettext('some context', 'Hello World') }}")
 
-        trans1 = 'Hello World - translated'
-        trans2 = 'Hello World - alt translated'
-
-        self.assertEqual(trans1, template1.render())
+        self.assertEqual('Hello World - translated', template1.render())
         self.gettext.assert_called_with('Hello World')
-        self.assertEqual(trans2, template2.render())
+        self.assertEqual('alt translated', template2.render())
         self.pgettext.assert_called_with('some context', 'Hello World')
-        self.assertEqual(trans1, template3.render())
+        self.assertEqual('Hello World - translated', template3.render())
         self.gettext.assert_called_with('Hello World')
-        self.assertEqual(trans1, template4.render())
+        self.assertEqual('Hello World - translated', template4.render())
         self.gettext.assert_called_with('Hello World')
-        self.assertEqual(trans2, template5.render())
+        self.assertEqual('alt translated', template5.render())
         self.pgettext.assert_called_with('some context', 'Hello World')
 
     def test_noop(self):
         template = self.env.from_string("{% trans 'Hello World' noop %}")
 
         self.assertEqual('Hello World', template.render())
+        self.gettext.assert_not_called()
 
     def test_as_var(self):
         template = self.env.from_string(
@@ -107,7 +105,9 @@ class DjangoI18nTransTest(DjangoI18nTestBase):
         expected_str = 'My var is: Hello World!'
 
         self.assertEqual(expected_str, template1.render())
+        self.gettext.assert_not_called()
         self.assertEqual(expected_str, template2.render())
+        self.gettext.assert_not_called()
 
     def test_errors(self):
         template1 = "{% trans 'Hello World' foo %}"
@@ -134,7 +134,7 @@ class DjangoI18nBlocktransTest(DjangoI18nTestBase):
 
         self.assertEqual('Translate me! - translated', template1.render())
         self.gettext.assert_called_with('Translate me!')
-        self.assertEqual('Translate me! - alt translated', template2.render())
+        self.assertEqual('alt translated', template2.render())
         self.pgettext.assert_called_with('foo', 'Translate me!')
 
     def test_trimmed(self):
