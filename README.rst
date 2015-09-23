@@ -85,8 +85,9 @@ The extension also tries to localize variables (such as dates and numbers) if
     Noop translation: {% trans "Please don't translate me!" noop %}
 
 
-``{% blocktrans %}`` currently doesn't support the ``count`` argument, but
-everything else works:
+``{% blocktrans %}`` works as it does in django including ``with``, ``trimmed``,
+``context`` and ``count`` arguments:
+
 
 .. code-block:: html+django/jinja
 

@@ -46,15 +46,29 @@ class DjangoI18nTestBase(SimpleTestCase):
     def _pgettext(context, message):
         return 'alt translated'
 
+    @staticmethod
+    def _ngettext(singular, plural, number):
+        return 'count translated'
+
+    @staticmethod
+    def _npgettext(context, singular, plural, number):
+        return 'count alt translated'
+
     def setUp(self):
         gettext_patcher = mock.patch('jdj_tags.extensions.ugettext', side_effect=self._gettext)
         pgettext_patcher = mock.patch('jdj_tags.extensions.pgettext', side_effect=self._pgettext)
+        ngettext_patcher = mock.patch('jdj_tags.extensions.ungettext', side_effect=self._ngettext)
+        npgettext_patcher = mock.patch('jdj_tags.extensions.npgettext', side_effect=self._npgettext)
 
         self.gettext = gettext_patcher.start()
         self.pgettext = pgettext_patcher.start()
+        self.ngettext = ngettext_patcher.start()
+        self.npgettext = npgettext_patcher.start()
 
         self.addCleanup(gettext_patcher.stop)
         self.addCleanup(pgettext_patcher.stop)
+        self.addCleanup(ngettext_patcher.stop)
+        self.addCleanup(npgettext_patcher.stop)
 
         self.env = Environment(extensions=[DjangoI18n])
 
@@ -192,6 +206,30 @@ class DjangoI18nBlocktransTest(DjangoI18nTestBase):
         )
         self.gettext.assert_called_with('Trans: %(foo)s')
 
+    def test_count(self):
+        template1 = self.env.from_string(
+            "{% blocktrans count counter=foo %}Singular{% plural %}"
+            "Plural {{ counter }}{% endblocktrans %}"
+        )
+        template2 = self.env.from_string(
+            """{% blocktrans trimmed count counter=foo %}
+                Singular
+            {% plural %}
+                Plural {{ counter }}
+            {% endblocktrans %}"""
+        )
+        template3 = self.env.from_string(
+            "{% blocktrans count counter=foo context 'mycontext' %}"
+            "Singular{% plural %}Plural {{ counter }}{% endblocktrans %}"
+        )
+
+        self.assertEqual('count translated', template1.render({'counter': 123}))
+        self.ngettext.assert_called_with('Singular', 'Plural %(counter)s', 123)
+        self.assertEqual('count translated', template2.render({'counter': 123}))
+        self.ngettext.assert_called_with('Singular', 'Plural %(counter)s', 123)
+        self.assertEqual('count alt translated', template3.render({'counter': 123}))
+        self.npgettext.assert_called_with('mycontext', 'Singular', 'Plural %(counter)s', 123)
+
     @override_settings(USE_L10N=True)
     def test_finalize_vars(self):
         def finalize(s):
@@ -203,6 +241,19 @@ class DjangoI18nBlocktransTest(DjangoI18nTestBase):
         template = self.env.from_string("{% blocktrans %}{{ foo }}{% endblocktrans %}")
 
         self.assertEqual('finalized 123 - translated', template.render({'foo': 123}))
+
+    def test_errors(self):
+        template1 = "{% blocktrans %}foo{% plural %}bar{% endblocktrans %}"
+        template2 = "{% blocktrans count counter=10 %}foo{% endblocktrans %}"
+
+        error_messages = [
+            (template1, 'used plural without specifying count'),
+            (template2, 'plural form not found'),
+        ]
+
+        for template, msg in error_messages:
+            with self.assertRaisesMessage(TemplateSyntaxError, msg):
+                self.env.from_string(template)
 
 
 @override_settings(USE_L10N=True, USE_TZ=True)

@@ -9,7 +9,7 @@ from django.templatetags.static import static as django_static
 from django.utils.encoding import force_text
 from django.utils.formats import localize
 from django.utils.timezone import template_localtime
-from django.utils.translation import pgettext, ugettext
+from django.utils.translation import npgettext, pgettext, ugettext, ungettext
 from jinja2 import lexer, nodes
 from jinja2.ext import Extension
 
@@ -54,8 +54,8 @@ class DjangoI18n(Extension):
         Noop translation: {% trans "Please don't translate me!" noop %}
 
 
-    `{% blocktrans %}` currently doesn't support the `count` argument, but
-    everything else works::
+    `{% blocktrans %}` works as it does in django including `with`, `trimmed`,
+    `context` and `count` arguments::
 
         Simple example: {% blocktrans %}Hello World!{% endblocktrans %}
 
@@ -124,6 +124,7 @@ class DjangoI18n(Extension):
 
     def _parse_blocktrans(self, parser, lineno):
         with_vars = {}
+        count = None
         context = None
         trimmed = False
 
@@ -137,11 +138,18 @@ class DjangoI18n(Extension):
                 next(parser.stream)
                 with_vars[key] = parser.parse_expression(False)
 
+        if parser.stream.skip_if('name:count'):
+            name = parser.stream.expect(lexer.TOKEN_NAME).value
+            parser.stream.expect(lexer.TOKEN_ASSIGN)
+            value = parser.parse_expression(False)
+            count = (name, value)
+
         if parser.stream.skip_if('name:context'):
             context = parser.stream.expect(lexer.TOKEN_STRING).value
 
         parser.stream.expect(lexer.TOKEN_BLOCK_END)
 
+        body_singular = None
         body = []
         additional_vars = set()
         while not parser.stream.current.test(lexer.TOKEN_BLOCK_BEGIN):
@@ -149,9 +157,16 @@ class DjangoI18n(Extension):
                 body.append(token.value)
             token = parser.stream.next_if(lexer.TOKEN_VARIABLE_BEGIN)
             if token is None:
-                # endblocktrans tag must come now
+                # endblocktrans or plural tag must come now
                 parser.stream.expect(lexer.TOKEN_BLOCK_BEGIN)
-                break
+                if body_singular is None and parser.stream.skip_if('name:plural'):
+                    if count is None:
+                        parser.fail('used plural without specifying count')
+                    parser.stream.expect(lexer.TOKEN_BLOCK_END)
+                    body_singular = body
+                    body = []
+                else:
+                    break
             else:
                 name = parser.stream.expect(lexer.TOKEN_NAME).value
                 if name not in with_vars:
@@ -164,10 +179,18 @@ class DjangoI18n(Extension):
         parser.stream.skip_if(lexer.TOKEN_BLOCK_BEGIN)
         parser.stream.expect('name:endblocktrans')
 
+        if count is not None and body_singular is None:
+            parser.fail('plural form not found')
+
         trans_vars = [
             nodes.Pair(nodes.Const(key), val, lineno=lineno)
             for key, val in with_vars.items()
         ]
+
+        if count is not None:
+            trans_vars.append(
+                nodes.Pair(nodes.Const(count[0]), count[1], lineno=lineno)
+            )
 
         trans_vars.extend(
             nodes.Pair(
@@ -178,32 +201,60 @@ class DjangoI18n(Extension):
             for key in additional_vars
         )
 
-        kwargs = [nodes.Keyword('trans_vars', nodes.Dict(trans_vars))]
+        kwargs = [
+            nodes.Keyword('trans_vars', nodes.Dict(trans_vars, lineno=lineno), lineno=lineno)
+        ]
 
         if context is not None:
-            kwargs.append(nodes.Keyword('context', nodes.Const(context)))
+            kwargs.append(
+                nodes.Keyword('context', nodes.Const(context, lineno=lineno), lineno=lineno)
+            )
+        if count is not None:
+            kwargs.append(
+                nodes.Keyword('count_var', nodes.Const(count[0], lineno=lineno), lineno=lineno)
+            )
 
         body = ''.join(body)
         if trimmed:
             body = ' '.join(map(lambda s: s.strip(), body.strip().splitlines()))
 
-        call = self.call_method(
-            '_make_blocktrans',
-            [nodes.TemplateData(body)],
-            kwargs
-        )
+        if body_singular is not None:
+            body_singular = ''.join(body_singular)
+            if trimmed:
+                body_singular = ' '.join(
+                    map(lambda s: s.strip(), body_singular.strip().splitlines())
+                )
 
-        return nodes.Output([nodes.MarkSafe(call)])
+        if body_singular is None:
+            args = []
+        else:
+            args = [nodes.TemplateData(body_singular, lineno=lineno)]
+        args.append(nodes.TemplateData(body, lineno=lineno))
+        call = self.call_method('_make_blocktrans', args, kwargs)
 
-    def _make_blocktrans(self, trans_str, context=None, trans_vars=None):
+        return nodes.Output([nodes.MarkSafe(call, lineno=lineno)], lineno=lineno)
+
+    def _make_blocktrans(self, singular, plural=None, context=None, trans_vars=None,
+                         count_var=None):
         if trans_vars is None:
             trans_vars = {}  # pragma: no cover
         if self.environment.finalize:
             trans_vars = {key: self.environment.finalize(val) for key, val in trans_vars.items()}
-        if context is None:
-            return ugettext(force_text(trans_str)) % trans_vars
+        if plural is None:
+            if context is None:
+                return ugettext(force_text(singular)) % trans_vars
+            else:
+                return pgettext(force_text(context), force_text(singular)) % trans_vars
         else:
-            return pgettext(force_text(context), force_text(trans_str)) % trans_vars
+            if context is None:
+                return ungettext(
+                    force_text(singular), force_text(plural), trans_vars[count_var]
+                ) % trans_vars
+            else:
+                return npgettext(
+                    force_text(context), force_text(singular), force_text(plural),
+                    trans_vars[count_var]
+                ) % trans_vars
 
     def parse(self, parser):
         token = next(parser.stream)
