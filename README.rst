@@ -86,7 +86,7 @@ The extension also tries to localize variables (such as dates and numbers) if
 
 
 ``{% blocktrans %}`` works as it does in django including ``with``, ``trimmed``,
-``context`` and ``count`` arguments:
+``context``, ``count`` and ``asvar`` arguments:
 
 
 .. code-block:: html+django/jinja
@@ -100,11 +100,12 @@ The extension also tries to localize variables (such as dates and numbers) if
         Upper url: {{ my_upper_url }}
     {% endblocktrans %}
 
-    Trim whitespace:
-    {% blocktrans trimmed %}
+    Trim whitespace and save to variable:
+    {% blocktrans trimmed asvar translated_var %}
         Trim those
         pesky newlines.
     {% endblocktrans %}
+    Translated text: {{ translated_var }}
 
 You can also use ``_``, ``gettext`` and ``pgettext`` directly:
 

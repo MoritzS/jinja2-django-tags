@@ -230,6 +230,16 @@ class DjangoI18nBlocktransTest(DjangoI18nTestBase):
         self.assertEqual('count alt translated', template3.render({'counter': 123}))
         self.npgettext.assert_called_with('mycontext', 'Singular', 'Plural %(counter)s', 123)
 
+    def test_as_var(self):
+        template = self.env.from_string(
+            "{% blocktrans asvar foo %}Translate me!{% endblocktrans %}"
+            "Here comes the translation: {{ foo }}"
+        )
+        self.assertEqual(
+            'Here comes the translation: Translate me! - translated', template.render()
+        )
+        self.gettext.assert_called_with('Translate me!')
+
     @override_settings(USE_L10N=True)
     def test_finalize_vars(self):
         def finalize(s):

@@ -55,7 +55,7 @@ class DjangoI18n(Extension):
 
 
     `{% blocktrans %}` works as it does in django including `with`, `trimmed`,
-    `context` and `count` arguments::
+    `context`, `count` and `asvar` arguments::
 
         Simple example: {% blocktrans %}Hello World!{% endblocktrans %}
 
@@ -66,11 +66,12 @@ class DjangoI18n(Extension):
             Upper url: {{ my_upper_url }}
         {% endblocktrans %}
 
-        Trim whitespace:
-        {% blocktrans trimmed %}
+        Trim whitespace and save to variable:
+        {% blocktrans trimmed asvar translated_var %}
             Trim those
-            pescy newlines.
+            pesky newlines.
         {% endblocktrans %}
+        Translated text: {{ translated_var }}
 
     You also can use `_`, `gettext` and `pgettext` directly::
 
@@ -127,9 +128,14 @@ class DjangoI18n(Extension):
         count = None
         context = None
         trimmed = False
+        as_var = None
 
         if parser.stream.skip_if('name:trimmed'):
             trimmed = True
+
+        if parser.stream.skip_if('name:asvar'):
+            as_var = parser.stream.expect(lexer.TOKEN_NAME)
+            as_var = nodes.Name(as_var.value, 'store', lineno=as_var.lineno)
 
         if parser.stream.skip_if('name:with'):
             while parser.stream.look().type == lexer.TOKEN_ASSIGN:
@@ -230,9 +236,12 @@ class DjangoI18n(Extension):
         else:
             args = [nodes.TemplateData(body_singular, lineno=lineno)]
         args.append(nodes.TemplateData(body, lineno=lineno))
-        call = self.call_method('_make_blocktrans', args, kwargs)
+        call = nodes.MarkSafe(self.call_method('_make_blocktrans', args, kwargs), lineno=lineno)
 
-        return nodes.Output([nodes.MarkSafe(call, lineno=lineno)], lineno=lineno)
+        if as_var is None:
+            return nodes.Output([call], lineno=lineno)
+        else:
+            return nodes.Assign(as_var, call)
 
     def _make_blocktrans(self, singular, plural=None, context=None, trans_vars=None,
                          count_var=None):
