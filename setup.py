@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name='jinja2-django-tags',
-    version='0.3.dev0',
+    version='0.3',
     author='Moritz Sichert',
     author_email='moritz.sichert@googlemail.com',
     url='https://github.com/MoritzS/jinja2-django-tags',
@@ -25,6 +25,7 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.3',
         'Programming Language :: Python :: 3.4',
+        'Programming Language :: Python :: 3.5',
     ],
-    keywords='jinja2 django template tags',
+    keywords='jinja2 jinja django template tags',
 )
