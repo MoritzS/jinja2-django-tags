@@ -3,12 +3,14 @@ jinja2 extensions that add django tags.
 """
 from __future__ import unicode_literals
 
+from datetime import datetime
+
 from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.templatetags.static import static as django_static
 from django.utils.encoding import force_text
-from django.utils.formats import localize
-from django.utils.timezone import template_localtime
+from django.utils.formats import date_format, localize
+from django.utils.timezone import get_current_timezone, template_localtime
 from django.utils.translation import npgettext, pgettext, ugettext, ungettext
 from jinja2 import lexer, nodes
 from jinja2.ext import Extension
@@ -353,6 +355,33 @@ class DjangoStatic(Extension):
             return nodes.Output([call], lineno=lineno)
 
 
+class DjangoNow(Extension):
+    """
+    Implements django's `{% now %}` tag.
+    """
+    tags = set(['now'])
+
+    def _now(self, format_string):
+        tzinfo = get_current_timezone() if settings.USE_TZ else None
+        cur_datetime = datetime.now(tz=tzinfo)
+        return date_format(cur_datetime, format_string)
+
+    def parse(self, parser):
+        lineno = next(parser.stream).lineno
+        token = parser.stream.expect(lexer.TOKEN_STRING)
+        format_string = nodes.Const(token.value)
+        call = self.call_method('_now', [format_string], lineno=lineno)
+
+        token = parser.stream.current
+        if token.test('name:as'):
+            next(parser.stream)
+            as_var = parser.stream.expect(lexer.TOKEN_NAME)
+            as_var = nodes.Name(as_var.value, 'store', lineno=as_var.lineno)
+            return nodes.Assign(as_var, call, lineno=lineno)
+        else:
+            return nodes.Output([call], lineno=lineno)
+
+
 class DjangoUrl(Extension):
     """
     Imlements django's `{% url %}` tag.
@@ -438,17 +467,18 @@ class DjangoUrl(Extension):
             return nodes.Assign(as_var, call, lineno=lineno)
 
 
-class DjangoCompat(DjangoCsrf, DjangoI18n, DjangoL10n, DjangoStatic, DjangoUrl):
+class DjangoCompat(DjangoCsrf, DjangoI18n, DjangoL10n, DjangoNow, DjangoStatic, DjangoUrl):
     """
     Combines all extensions to one, so you don't have to put all of them
     in the django settings.
     """
-    tags = set(['csrf_token', 'trans', 'blocktrans', 'static', 'url'])
+    tags = set(['csrf_token', 'trans', 'blocktrans', 'now', 'static', 'url'])
 
     _tag_class = {
         'csrf_token': DjangoCsrf,
         'trans': DjangoI18n,
         'blocktrans': DjangoI18n,
+        'now': DjangoNow,
         'static': DjangoStatic,
         'url': DjangoUrl,
     }

@@ -12,6 +12,7 @@ The following tags are included:
 
 - `csrf_token`_
 - `trans and blocktrans`_
+- `now`_
 - `static`_
 - `url`_
 
@@ -114,6 +115,19 @@ You can also use ``_``, ``gettext`` and ``pgettext`` directly:
     Simple example: {{ _('Hello World') }}
     More verbose: {{ gettext('Hello World') }}
     With context: {{ pgettext('Hello World', 'another example') }}
+
+
+now
+---
+The ``{% now %}`` tag comes with ``jdj_tags.extensions.DjangoNow``.
+It works the same as in Django:
+
+.. code-block:: html+django/jinja
+
+    Current year: {% now 'Y' %}
+
+    {% now 'Y' as cur_year %}
+    Copyright My Company, {{ cur_year }}
 
 
 static

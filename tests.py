@@ -9,8 +9,8 @@ from django.utils import timezone, translation
 from jinja2 import Environment, TemplateSyntaxError
 from jinja2.ext import Extension
 
-from jdj_tags.extensions import (DjangoCompat, DjangoCsrf, DjangoI18n, DjangoL10n, DjangoStatic,
-                                 DjangoUrl)
+from jdj_tags.extensions import (DjangoCompat, DjangoCsrf, DjangoI18n, DjangoL10n, DjangoNow,
+                                 DjangoStatic, DjangoUrl)
 
 try:
     from unittest import mock
@@ -337,6 +337,34 @@ class DjangoStaticTest(SimpleTestCase):
         self.static.assert_called_with('static.png')
 
 
+class DjangoNowTest(SimpleTestCase):
+    @staticmethod
+    def _now(tz=None):
+        return datetime.datetime(2015, 7, 8, 10, 33, 25, tzinfo=tz)
+
+    def setUp(self):
+        patcher = mock.patch('jdj_tags.extensions.datetime')
+        dt_mock = patcher.start()
+        dt_mock.now.configure_mock(side_effect=self._now)
+        self.addCleanup(patcher.stop)
+
+        self.env = Environment(extensions=[DjangoNow])
+
+    def test_simple(self):
+        template = self.env.from_string("{% now 'Y-m-d' %}")
+        expected = self._now().strftime('%Y-%m-%d')
+
+        self.assertEqual(expected, template.render())
+
+    def test_as_var(self):
+        template = self.env.from_string(
+            "{% now 'Y-m-d' as cur_date %}Current date is: {{ cur_date }}!"
+        )
+        expected = "Current date is: %s!" % self._now().strftime('%Y-%m-%d')
+
+        self.assertEqual(expected, template.render())
+
+
 class DjangoUrlTest(SimpleTestCase):
     @staticmethod
     def _reverse(name, *args, **kwargs):
@@ -427,7 +455,7 @@ class DjangoUrlTest(SimpleTestCase):
 
 
 class DjangoCompatTest(SimpleTestCase):
-    classes = ['DjangoCsrf', 'DjangoI18n', 'DjangoStatic', 'DjangoUrl']
+    classes = ['DjangoCsrf', 'DjangoI18n', 'DjangoStatic', 'DjangoNow', 'DjangoUrl']
 
     class CalledParse(Exception):
         pass
@@ -455,6 +483,7 @@ class DjangoCompatTest(SimpleTestCase):
             ('trans', 'DjangoI18n'),
             ('blocktrans', 'DjangoI18n'),
             ('static', 'DjangoStatic'),
+            ('now', 'DjangoNow'),
             ('url', 'DjangoUrl'),
         ]
 
