@@ -30,7 +30,8 @@ was added.
 If you want to use jinja2 templates in older versions of Django, take a look
 at `django-jinja <https://github.com/niwinz/django-jinja>`_.
 
-Also it has only been tested for Python 2.7 and 3.4, and Jinja2 2.7 and 2.8.
+This library has been tested on Python 2.7, 3.4 and 3.5, Jinja 2.7 and 2.8, and
+Django 1.8 and 1.9.
 
 Usage
 =====
