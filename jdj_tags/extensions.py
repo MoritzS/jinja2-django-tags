@@ -6,7 +6,6 @@ from __future__ import unicode_literals
 from datetime import datetime
 
 from django.conf import settings
-from django.core.urlresolvers import reverse
 from django.templatetags.static import static as django_static
 from django.utils.encoding import force_text
 from django.utils.formats import date_format, localize
@@ -14,6 +13,11 @@ from django.utils.timezone import get_current_timezone, template_localtime
 from django.utils.translation import npgettext, pgettext, ugettext, ungettext
 from jinja2 import lexer, nodes
 from jinja2.ext import Extension
+
+try:
+    from django.urls import reverse
+except:
+    from django.core.urlresolvers import reverse
 
 
 class DjangoCsrf(Extension):
