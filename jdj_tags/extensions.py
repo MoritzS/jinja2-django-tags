@@ -164,13 +164,20 @@ class DjangoI18n(Extension):
         body_singular = None
         body = []
         additional_vars = set()
-        while not parser.stream.current.test(lexer.TOKEN_BLOCK_BEGIN):
-            for token in iter(lambda: parser.stream.next_if(lexer.TOKEN_DATA), None):
+        for token in parser.stream:
+            if token is lexer.TOKEN_EOF:
+                parser.fail('unexpected end of template, expected endblocktrans tag')
+            if token.type is lexer.TOKEN_DATA:
                 body.append(token.value)
-            token = parser.stream.next_if(lexer.TOKEN_VARIABLE_BEGIN)
-            if token is None:
-                # endblocktrans or plural tag must come now
-                parser.stream.expect(lexer.TOKEN_BLOCK_BEGIN)
+            elif token.type is lexer.TOKEN_VARIABLE_BEGIN:
+                name = parser.stream.expect(lexer.TOKEN_NAME).value
+                if name not in with_vars and (count is None or count[0] != name):
+                    additional_vars.add(name)
+                parser.stream.expect(lexer.TOKEN_VARIABLE_END)
+                # django converts variables inside the blocktrans tag into
+                # "%(var_name)s" format, so we do the same.
+                body.append('%({})s'.format(name))
+            elif token.type is lexer.TOKEN_BLOCK_BEGIN:
                 if body_singular is None and parser.stream.skip_if('name:plural'):
                     if count is None:
                         parser.fail('used plural without specifying count')
@@ -178,18 +185,8 @@ class DjangoI18n(Extension):
                     body_singular = body
                     body = []
                 else:
+                    parser.stream.expect('name:endblocktrans')
                     break
-            else:
-                name = parser.stream.expect(lexer.TOKEN_NAME).value
-                if name not in with_vars:
-                    additional_vars.add(name)
-                parser.stream.expect(lexer.TOKEN_VARIABLE_END)
-                # django converts variables inside the blocktrans tag into
-                # "%(var_name)s" format, so we do the same.
-                body.append('%({})s'.format(name))
-
-        parser.stream.skip_if(lexer.TOKEN_BLOCK_BEGIN)
-        parser.stream.expect('name:endblocktrans')
 
         if count is not None and body_singular is None:
             parser.fail('plural form not found')
@@ -254,22 +251,26 @@ class DjangoI18n(Extension):
         if trans_vars is None:
             trans_vars = {}  # pragma: no cover
         if self.environment.finalize:
-            trans_vars = {key: self.environment.finalize(val) for key, val in trans_vars.items()}
+            finalized_trans_vars = {
+                key: self.environment.finalize(val) for key, val in trans_vars.items()
+            }
+        else:
+            finalized_trans_vars = trans_vars
         if plural is None:
             if context is None:
-                return ugettext(force_text(singular)) % trans_vars
+                return ugettext(force_text(singular)) % finalized_trans_vars
             else:
-                return pgettext(force_text(context), force_text(singular)) % trans_vars
+                return pgettext(force_text(context), force_text(singular)) % finalized_trans_vars
         else:
             if context is None:
                 return ungettext(
                     force_text(singular), force_text(plural), trans_vars[count_var]
-                ) % trans_vars
+                ) % finalized_trans_vars
             else:
                 return npgettext(
                     force_text(context), force_text(singular), force_text(plural),
                     trans_vars[count_var]
-                ) % trans_vars
+                ) % finalized_trans_vars
 
     def parse(self, parser):
         token = next(parser.stream)

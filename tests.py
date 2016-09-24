@@ -223,12 +223,36 @@ class DjangoI18nBlocktransTest(DjangoI18nTestBase):
             "Singular{% plural %}Plural {{ counter }}{% endblocktrans %}"
         )
 
-        self.assertEqual('count translated', template1.render({'counter': 123}))
+        self.assertEqual('count translated', template1.render({'foo': 123}))
         self.ngettext.assert_called_with('Singular', 'Plural %(counter)s', 123)
-        self.assertEqual('count translated', template2.render({'counter': 123}))
+        self.assertEqual('count translated', template2.render({'foo': 123}))
         self.ngettext.assert_called_with('Singular', 'Plural %(counter)s', 123)
-        self.assertEqual('count alt translated', template3.render({'counter': 123}))
+        self.assertEqual('count alt translated', template3.render({'foo': 123}))
         self.npgettext.assert_called_with('mycontext', 'Singular', 'Plural %(counter)s', 123)
+
+    def test_count_finalize(self):
+        def finalize(value):
+            # force convert to string
+            return '{}'.format(value)
+
+        self.env.finalize = finalize
+
+        template = self.env.from_string(
+            "{% blocktrans count counter=foo %}Singular{% plural %}"
+            "Plural {{ counter }}{% endblocktrans %}"
+        )
+        self.assertEqual('count translated', template.render({'foo': 123}))
+        self.ngettext.assert_called_with('Singular', 'Plural %(counter)s', 123)
+
+    def test_count_override_counter(self):
+        template = self.env.from_string(
+            "{{ my_counter }} "
+            "{% blocktrans count my_counter=foo %}Singular {{ my_counter }}"
+            "{% plural %}Plural {{ my_counter }}{% endblocktrans %}"
+        )
+        context = {'my_counter': 123, 'foo': 456}
+        self.assertEqual('123 count translated', template.render(context))
+        self.ngettext.assert_called_with('Singular %(my_counter)s', 'Plural %(my_counter)s', 456)
 
     def test_as_var(self):
         template = self.env.from_string(
