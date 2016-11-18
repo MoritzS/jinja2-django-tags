@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name='jinja2-django-tags',
-    version='0.4',
+    version='0.5',
     author='Moritz Sichert',
     author_email='moritz.sichert@googlemail.com',
     url='https://github.com/MoritzS/jinja2-django-tags',
